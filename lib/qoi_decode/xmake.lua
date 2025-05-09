@@ -1,0 +1,5 @@
+compartment("qoi_decode")
+    set_default(false)
+    add_includedirs("../../include")
+    add_deps("freestanding")
+    add_files("qoi_decode.cc")
