@@ -352,12 +352,14 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
                                    qoi_stream *stream) {
   decoder->progress = QOI_PROGRESS_AWAIT_TAIL;
 
-  if (stream->out_buf_size == 0) return QOI_STATUS_INPUT_EXHAUSTED;
+  if (stream->in_buf_size == 0) return QOI_STATUS_INPUT_EXHAUSTED;
 
   // Verify the tail padding.
   if (decoder->tmp_buf.v < 7) {
     if (stream->in_buf[0] == 0) {
       decoder->tmp_buf.v += 1;
+      stream->in_buf += 1;
+      stream->in_buf_size -= 1;
       return qoi_progress_await_tail(decoder, stream);
     }
   } else if (decoder->tmp_buf.v == 7) {

@@ -72,6 +72,18 @@ int main(int argc, char** argv) {
         stream.in_buf_size = 1;
     }
 
+    // 8 byte read for the trailer...
+    assert(r == QOI_STATUS_INPUT_EXHAUSTED);
+    for (int i = 0; i < 7; ++i) {
+        r = qoi_decode(&stream);
+        assert(r == QOI_STATUS_INPUT_EXHAUSTED);
+        in_idx += 1;
+        stream.in_buf = in_buf + in_idx;
+        stream.in_buf_size = 1;
+    }
+
+    r = qoi_decode(&stream);
+    assert(r == QOI_STATUS_DONE);
 
     return 0;
 }
