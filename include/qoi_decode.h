@@ -30,7 +30,10 @@ typedef struct {
   size_t pixel_length_remaining;
   uint32_t px_prev;
   uint32_t index[64];
-  uint32_t tmp_buf;
+  union {
+    uint32_t v;
+    uint8_t b[4];
+  } tmp_buf;
   unsigned char tmp_buf_size;
   unsigned char pending_run_count;
 } qoi_decoder_state;
