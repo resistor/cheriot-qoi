@@ -1,14 +1,14 @@
 #include <qoi_decode.h>
 
 #ifdef __CHERIOT__
-#include <cheri.hh>
 #include <token.h>
+
+#include <cheri.hh>
 #endif
 
 static constexpr size_t QOI_PIXELS_MAX = 400000000;
 
-// This is backwards because `tmp_buf` is pushed in big-endian order.
-static constexpr uint8_t qoi_magic[4] = {'f', 'i', 'o', 'q'};
+static constexpr uint8_t qoi_magic[4] = {'q', 'o', 'i', 'f'};
 static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
 
 #ifdef __CHERIOT__
@@ -29,24 +29,24 @@ int qoi_decoder_state_init(
     qoi_decoder_state *__sealed_capability sealed_decoder) {
   auto *decoder = qoi_unseal(sealed_decoder);
   *decoder = {
-      .tmp_buf = { .v = {} },
-      .px_prev = 0x000000FF,
+    .px_prev = 0xFF000000,
+    .tmp_buf = {.v = {}},
   };
   return 0;
 }
 
 // The `QOI_PROGRESS_*` constants represent the states that
 // decoder state machine can be in.
-static constexpr unsigned char QOI_PROGRESS_AWAIT_MAGIC = 0;
-static constexpr unsigned char QOI_PROGRESS_AWAIT_WIDTH = 1;
-static constexpr unsigned char QOI_PROGRESS_AWAIT_HEIGHT = 2;
-static constexpr unsigned char QOI_PROGRESS_AWAIT_CHANNELS = 3;
-static constexpr unsigned char QOI_PROGRESS_AWAIT_COLORSPACE = 4;
-static constexpr unsigned char QOI_PROGRESS_NEW_PIXEL = 5;
-static constexpr unsigned char QOI_PROGRESS_OP_RGBA = 6;
-static constexpr unsigned char QOI_PROGRESS_BUFFERED_OUTPUT = 7;
-static constexpr unsigned char QOI_PROGRESS_AWAIT_TAIL = 8;
-static constexpr unsigned char QOI_PROGRESS_INVALID = 9;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_MAGIC = 0;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_WIDTH = 1;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_HEIGHT = 2;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_CHANNELS = 3;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_COLORSPACE = 4;
+static constexpr uint8_t QOI_PROGRESS_NEW_PIXEL = 5;
+static constexpr uint8_t QOI_PROGRESS_OP_RGBA = 6;
+static constexpr uint8_t QOI_PROGRESS_BUFFERED_OUTPUT = 7;
+static constexpr uint8_t QOI_PROGRESS_AWAIT_TAIL = 8;
+static constexpr uint8_t QOI_PROGRESS_INVALID = 9;
 
 // Shift bytes from the input buffer into the decoder's internal buffer.
 static void qoi_shift_bytes(qoi_decoder_state *decoder, qoi_stream *stream,
@@ -56,12 +56,7 @@ static void qoi_shift_bytes(qoi_decoder_state *decoder, qoi_stream *stream,
   size_t required = bytes - decoder->tmp_buf_size;
   size_t count =
       (stream->in_buf_size > required) ? required : stream->in_buf_size;
-  uint32_t tmp = decoder->tmp_buf.v;
-  for (size_t i = 0; i < count; ++i) {
-    tmp <<= 8;
-    tmp |= stream->in_buf[i];
-  }
-  decoder->tmp_buf.v = tmp;
+  memcpy(decoder->tmp_buf.b + decoder->tmp_buf_size, stream->in_buf, count);
   decoder->tmp_buf_size += count;
   stream->in_buf += count;
   stream->in_buf_size -= count;
@@ -85,24 +80,24 @@ static int qoi_output_pixel(qoi_decoder_state *decoder, qoi_stream *stream,
   decoder->tmp_buf_size = stream->desc.channels;
   decoder->px_prev = pixel;
 
-  unsigned char pixel_channels[4];
+  uint8_t pixel_channels[4];
   memcpy(pixel_channels, &pixel, 4);
-  size_t pixel_idx = pixel_channels[3] * 3 + pixel_channels[2] * 5 +
-                     pixel_channels[1] * 7 + pixel_channels[0] * 11;
+  size_t pixel_idx = pixel_channels[0] * 3 + pixel_channels[1] * 5 +
+                     pixel_channels[2] * 7 + pixel_channels[3] * 11;
   pixel_idx %= 64;
   decoder->index[pixel_idx] = pixel;
 
   return qoi_progress_buffered_output(decoder, stream);
 }
 
-#define TMP_BUF_RESET() \
+#define TMP_BUF_RESET()   \
   decoder->tmp_buf.v = 0; \
   decoder->tmp_buf_size = 0;
 
-#define VERIFY_TMP_BUF_RESET()                              \
+#define VERIFY_TMP_BUF_RESET()                                \
   if (decoder->tmp_buf_size > 0 || decoder->tmp_buf.v != 0) { \
-    decoder->progress = QOI_PROGRESS_INVALID;               \
-    return QOI_STATUS_ERR_INTERNAL;                         \
+    decoder->progress = QOI_PROGRESS_INVALID;                 \
+    return QOI_STATUS_ERR_INTERNAL;                           \
   }
 
 static int qoi_progress_invalid(qoi_decoder_state *, qoi_stream *) {
@@ -126,7 +121,7 @@ static int qoi_progress_await_magic(qoi_decoder_state *decoder,
     decoder->progress = QOI_PROGRESS_INVALID;
     return QOI_STATUS_ERR_FORMAT;
   }
-  
+
   TMP_BUF_RESET();
 
   return qoi_progress_await_width(decoder, stream);
@@ -142,8 +137,8 @@ static int qoi_progress_await_width(qoi_decoder_state *decoder,
   qoi_shift_bytes(decoder, stream, FIELD_SIZE);
   if (decoder->tmp_buf_size < FIELD_SIZE) return QOI_STATUS_INPUT_EXHAUSTED;
 
-  // Read the width (implicitly bswapped!).
-  stream->desc.width = decoder->tmp_buf.v;
+  // Read the width.
+  stream->desc.width = __builtin_bswap32(decoder->tmp_buf.v);
 
   TMP_BUF_RESET();
 
@@ -160,8 +155,8 @@ static int qoi_progress_await_height(qoi_decoder_state *decoder,
   qoi_shift_bytes(decoder, stream, FIELD_SIZE);
   if (decoder->tmp_buf_size < FIELD_SIZE) return QOI_STATUS_INPUT_EXHAUSTED;
 
-  // Read the height (implicitly bswapped!).
-  stream->desc.height = decoder->tmp_buf.v;
+  // Read the height.
+  stream->desc.height = __builtin_bswap32(decoder->tmp_buf.v);
   if (stream->desc.height >= QOI_PIXELS_MAX / stream->desc.width) {
     decoder->progress = QOI_PROGRESS_INVALID;
     return QOI_STATUS_ERR_FORMAT;
@@ -185,7 +180,7 @@ static int qoi_progress_await_channels(qoi_decoder_state *decoder,
   if (stream->in_buf_size < 1) return QOI_STATUS_INPUT_EXHAUSTED;
 
   // Read the `channel` and sanity check it.
-  unsigned char channels = stream->in_buf[0];
+  uint8_t channels = stream->in_buf[0];
   if (channels != 3 && channels != 4) {
     decoder->progress = QOI_PROGRESS_INVALID;
     return QOI_STATUS_ERR_FORMAT;
@@ -210,7 +205,7 @@ static int qoi_progress_await_colorspace(qoi_decoder_state *decoder,
   if (stream->in_buf_size < 1) return QOI_STATUS_INPUT_EXHAUSTED;
 
   // Read the `colorspace` and sanity check it.
-  unsigned char colorspace = stream->in_buf[0];
+  uint8_t colorspace = stream->in_buf[0];
   if (colorspace != 0 && colorspace != 4) {
     decoder->progress = QOI_PROGRESS_INVALID;
     return QOI_STATUS_ERR_FORMAT;
@@ -233,18 +228,13 @@ static int qoi_progress_new_pixel(qoi_decoder_state *decoder,
   if (decoder->pending_run_count > 0) {
     decoder->pending_run_count -= 1;
     return qoi_output_pixel(decoder, stream, decoder->px_prev);
-    ;
   }
 
   // Buffer the first byte of the next command.
   qoi_shift_bytes(decoder, stream, 1);
   if (decoder->tmp_buf_size < 1) return QOI_STATUS_INPUT_EXHAUSTED;
 
-  unsigned char byte0 = 0;
-  memcpy(&byte0,
-         reinterpret_cast<unsigned char *>(&decoder->tmp_buf) +
-             decoder->tmp_buf_size - 1,
-         sizeof(unsigned char));
+  uint8_t byte0 = decoder->tmp_buf.b[0];
 
   // Dispatch based on the first byte.
   if (byte0 == 0b11111110) {
@@ -252,8 +242,8 @@ static int qoi_progress_new_pixel(qoi_decoder_state *decoder,
     qoi_shift_bytes(decoder, stream, 4);
     if (decoder->tmp_buf_size < 4) return QOI_STATUS_INPUT_EXHAUSTED;
 
-    uint32_t pixel = decoder->tmp_buf.v << 8;
-    pixel |= decoder->px_prev & 0xFF;
+    uint32_t pixel = decoder->tmp_buf.v >> 8;
+    pixel |= decoder->px_prev & 0xFF000000;
     return qoi_output_pixel(decoder, stream, pixel);
   } else if (byte0 == 0b11111111) {
     // QOI_OP_RGBA
@@ -262,24 +252,24 @@ static int qoi_progress_new_pixel(qoi_decoder_state *decoder,
     return qoi_progress_op_rgba(decoder, stream);
   }
 
-  unsigned char byte0_decode = decoder->tmp_buf.v & 0b11000000;
+  uint8_t byte0_decode = byte0 & 0b11000000;
   switch (byte0_decode) {
     case 0b00000000: {
       // QOI_OP_INDEX
-      unsigned char idx = byte0 & 0b111111;
+      uint8_t idx = byte0 & 0b111111;
       uint32_t pixel = decoder->index[idx];
       return qoi_output_pixel(decoder, stream, pixel);
     }
     case 0b01000000: {
       // QOI_OP_DIFF
-      unsigned char channels[4];
+      uint8_t channels[4];
       memcpy(channels, &decoder->px_prev, 4);
-      unsigned char dr = (byte0 & 0b00110000) >> 4;
-      unsigned char dg = (byte0 & 0b00001100) >> 2;
-      unsigned char db = (byte0 & 0b00000011) >> 0;
-      channels[3] += dr - 2;
-      channels[2] += dg - 2;
-      channels[1] += db - 2;
+      uint8_t dr = (byte0 & 0b00110000) >> 4;
+      uint8_t dg = (byte0 & 0b00001100) >> 2;
+      uint8_t db = (byte0 & 0b00000011) >> 0;
+      channels[0] += dr - 2;
+      channels[1] += dg - 2;
+      channels[2] += db - 2;
       uint32_t pixel;
       memcpy(&pixel, channels, 4);
       return qoi_output_pixel(decoder, stream, pixel);
@@ -288,15 +278,15 @@ static int qoi_progress_new_pixel(qoi_decoder_state *decoder,
       // QOI_OP_LUMA
       qoi_shift_bytes(decoder, stream, 2);
       if (decoder->tmp_buf_size < 2) return QOI_STATUS_INPUT_EXHAUSTED;
-      
-      unsigned char channels[4];
+
+      uint8_t channels[4];
       memcpy(channels, &decoder->px_prev, 4);
-      unsigned char dg = ((decoder->tmp_buf.v & 0x3F00) >> 8) - 32;
-      unsigned char drdg = ((decoder->tmp_buf.v & 0b11110000) >> 4) - 8;
-      unsigned char dbdg = ((decoder->tmp_buf.v & 0b00001111) >> 0) - 8;
-      channels[2] += dg;
-      channels[3] += drdg + dg;
-      channels[1] += dbdg + dg;
+      uint8_t dg = (byte0 & 0x3F) - 32;
+      uint8_t drdg = ((decoder->tmp_buf.b[1] & 0b11110000) >> 4) - 8;
+      uint8_t dbdg = ((decoder->tmp_buf.b[1] & 0b00001111) >> 0) - 8;
+      channels[1] += dg;
+      channels[0] += drdg + dg;
+      channels[2] += dbdg + dg;
       uint32_t pixel;
       memcpy(&pixel, channels, 4);
       return qoi_output_pixel(decoder, stream, pixel);
@@ -313,7 +303,7 @@ static int qoi_progress_new_pixel(qoi_decoder_state *decoder,
 }
 
 // QOI_OP_RGBA is needs its own QOI_PROGRESS_* state because
-// the command occupies 5 bytes in the input stream, which 
+// the command occupies 5 bytes in the input stream, which
 // doesn't fit in the temporary buffer. By using the op-
 // specific state to record that that's already decoded the
 // first byte, we then only need to buffer the 4 remaining
@@ -333,20 +323,24 @@ static int qoi_progress_buffered_output(qoi_decoder_state *decoder,
                                         qoi_stream *stream) {
   decoder->progress = QOI_PROGRESS_BUFFERED_OUTPUT;
 
-  // Flush buffered output bytes one at a time to the output buffer.
-  while (decoder->tmp_buf_size > 0) {
-    if (stream->out_buf_size == 0) return QOI_STATUS_OUTPUT_EXHAUSTED;
+  if (stream->out_buf_size == 0) return QOI_STATUS_OUTPUT_EXHAUSTED;
 
-    stream->out_buf[0] = decoder->tmp_buf.v >> 24;
-    decoder->tmp_buf.v <<= 8;
-    decoder->tmp_buf_size -= 1;
-    stream->out_buf_size -= 1;
-    stream->out_buf += 1;
-  }
+  // Output as many bytes as we have space for in the output buffer.
+  size_t count = (decoder->tmp_buf_size > stream->out_buf_size)
+                     ? stream->out_buf_size
+                     : decoder->tmp_buf_size;
+  memcpy(stream->out_buf, &decoder->tmp_buf, count);
+  decoder->tmp_buf.v >>= 8 * count;
+  decoder->tmp_buf_size -= count;
+  stream->out_buf += count;
+  stream->out_buf_size -= count;
 
+  if (decoder->tmp_buf_size > 0) return QOI_STATUS_OUTPUT_EXHAUSTED;
+
+  // Only mark the pixel as complete after we've drained the temp buffer.
+  decoder->pixel_length_remaining -= 1;
   TMP_BUF_RESET();
 
-  decoder->pixel_length_remaining -= 1;
   if (decoder->pixel_length_remaining > 0) {
     return qoi_progress_new_pixel(decoder, stream);
   } else {
@@ -376,8 +370,7 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
 
 int qoi_decode(qoi_stream *stream) {
   auto *decoder = qoi_unseal(stream->decoder_state);
-  if (!decoder)
-    return QOI_STATUS_ERR_PARAM;
+  if (!decoder) return QOI_STATUS_ERR_PARAM;
 
   // Dispatch based on the current progress.
   switch (decoder->progress) {

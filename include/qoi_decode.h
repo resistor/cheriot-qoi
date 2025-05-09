@@ -4,13 +4,13 @@
 
 #ifdef __CHERIOT__
 #include <cdefs.h>
-#include <compartment.h>
 #include <compartment-macros.h>
+#include <compartment.h>
 #else
 #include <string.h>
 
-// Defined away some CHERIoT macros when building for host.
-#define DECLARE_AND_DEFINE_STATIC_SEALED_VALUE(a,b,c,d,e,f)
+// Define away some CHERIoT macros when building for host.
+#define DECLARE_AND_DEFINE_STATIC_SEALED_VALUE(a, b, c, d, e, f)
 #define __cheri_compartment(a)
 #define __sealed_capability
 #define __DECL
@@ -18,15 +18,15 @@
 
 // Parsed values from the header of the QOI file.
 typedef struct {
-	unsigned int width;
-	unsigned int height;
-	unsigned char channels;
-	unsigned char colorspace;
+  unsigned int width;
+  unsigned int height;
+  uint8_t channels;
+  uint8_t colorspace;
 } qoi_desc;
 
 // Private internal decoder state.
 typedef struct {
-  unsigned char progress;
+  uint8_t progress;
   size_t pixel_length_remaining;
   uint32_t px_prev;
   uint32_t index[64];
@@ -34,15 +34,15 @@ typedef struct {
     uint32_t v;
     uint8_t b[4];
   } tmp_buf;
-  unsigned char tmp_buf_size;
-  unsigned char pending_run_count;
+  uint8_t tmp_buf_size;
+  uint8_t pending_run_count;
 } qoi_decoder_state;
 
 // Can be used to statically define a `qoi_decoder_state` in the
 // calling compartment.
-#define DECLARE_AND_DEFINE_QOI_DECODER(name)                   \
-	DECLARE_AND_DEFINE_STATIC_SEALED_VALUE(                  \
-        qoi_decoder_state, qoi_decode, QOIDecoderStateKey, name, {})
+#define DECLARE_AND_DEFINE_QOI_DECODER(name)                            \
+  DECLARE_AND_DEFINE_STATIC_SEALED_VALUE(qoi_decoder_state, qoi_decode, \
+                                         QOIDecoderStateKey, name, {})
 
 typedef struct {
   // Points to the next byte of input to be consumed.
@@ -59,7 +59,7 @@ typedef struct {
   qoi_desc desc;
 
   // Private internal decoder state.
-  qoi_decoder_state * __sealed_capability decoder_state;
+  qoi_decoder_state* __sealed_capability decoder_state;
 } qoi_stream;
 
 // Initializes (or resets) a `qoi_decoder_state`.
