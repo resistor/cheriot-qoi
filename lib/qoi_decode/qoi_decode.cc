@@ -3,6 +3,8 @@
 #ifdef __CHERIOT__
 #include <token.h>
 #include <cheri.hh>
+#include <debug.hh>
+using Debug = ConditionalDebug<true, "QOI Decoder">;
 #endif
 
 static constexpr size_t QOI_PIXELS_MAX = 400000000;
@@ -374,13 +376,14 @@ int qoi_decode(qoi_stream *stream) {
   auto *decoder = qoi_unseal(stream->decoder_state);
   if (!decoder) return QOI_STATUS_ERR_PARAM;
 
-#ifdef __CHERIOT__
+#if __CHERIOT__
   if (!CHERI::check_pointer<CHERI::PermissionSet{
                                 CHERI::Permission::Load,
                                 CHERI::Permission::Store,
                                 CHERI::Permission::LoadMutable,
-                                CHERI::Permission::LoadStoreCapability},
-                            false, true>(decoder))
+                                CHERI::Permission::LoadStoreCapability,
+                                CHERI::Permission::LoadGlobal},
+                            false, false>(decoder))
     return QOI_STATUS_ERR_PARAM;
 #endif
 
