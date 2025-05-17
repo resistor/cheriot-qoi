@@ -373,17 +373,32 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
 }
 
 int qoi_decode(qoi_stream *stream) {
-  auto *decoder = qoi_unseal(stream->decoder_state);
+#if __CHERIOT__
+  if (!CHERI::check_pointer<CHERI::PermissionSet{
+          CHERI::Permission::Load, CHERI::Permission::Store,
+          CHERI::Permission::LoadMutable,
+          CHERI::Permission::LoadStoreCapability}>(stream, sizeof(qoi_stream)))
+    return QOI_STATUS_ERR_PARAM;
+
+  if (stream->in_buf_size > 0 &&
+      !CHERI::check_pointer<CHERI::PermissionSet{CHERI::Permission::Store}>(
+          stream->in_buf, stream->in_buf_size))
+    return QOI_STATUS_ERR_PARAM;
+
+  if (stream->out_buf_size > 0 &&
+      !CHERI::check_pointer<CHERI::PermissionSet{CHERI::Permission::Store}>(
+          stream->out_buf, stream->out_buf_size))
+    return QOI_STATUS_ERR_PARAM;
+#endif
+
+  qoi_decoder_state *decoder = qoi_unseal(stream->decoder_state);
   if (!decoder) return QOI_STATUS_ERR_PARAM;
 
 #if __CHERIOT__
   if (!CHERI::check_pointer<CHERI::PermissionSet{
                                 CHERI::Permission::Load,
-                                CHERI::Permission::Store,
-                                CHERI::Permission::LoadMutable,
-                                CHERI::Permission::LoadStoreCapability,
-                                CHERI::Permission::LoadGlobal},
-                            false, false>(decoder))
+                                CHERI::Permission::Store},
+                            true, true>(decoder, sizeof(qoi_decoder_state)))
     return QOI_STATUS_ERR_PARAM;
 #endif
 
