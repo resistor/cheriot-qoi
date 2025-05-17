@@ -2,7 +2,6 @@
 
 #ifdef __CHERIOT__
 #include <token.h>
-
 #include <cheri.hh>
 #endif
 
@@ -28,6 +27,7 @@ static qoi_decoder_state *qoi_unseal(
 int qoi_decoder_state_init(
     qoi_decoder_state *__sealed_capability sealed_decoder) {
   auto *decoder = qoi_unseal(sealed_decoder);
+  if (!decoder) return QOI_STATUS_ERR_PARAM;
   *decoder = {
     .px_prev = 0xFF000000,
     .tmp_buf = {.v = {}},
@@ -373,6 +373,16 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
 int qoi_decode(qoi_stream *stream) {
   auto *decoder = qoi_unseal(stream->decoder_state);
   if (!decoder) return QOI_STATUS_ERR_PARAM;
+
+#ifdef __CHERIOT__
+  if (!CHERI::check_pointer<CHERI::PermissionSet{
+                                CHERI::Permission::Load,
+                                CHERI::Permission::Store,
+                                CHERI::Permission::LoadMutable,
+                                CHERI::Permission::LoadStoreCapability},
+                            false, true>(decoder))
+    return QOI_STATUS_ERR_PARAM;
+#endif
 
   // Dispatch based on the current progress.
   switch (decoder->progress) {
