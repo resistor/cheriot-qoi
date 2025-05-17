@@ -373,9 +373,6 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
 }
 
 int qoi_decode(qoi_stream *stream) {
-  auto *decoder = qoi_unseal(stream->decoder_state);
-  if (!decoder) return QOI_STATUS_ERR_PARAM;
-
 #if __CHERIOT__
   if (!CHERI::check_pointer<CHERI::PermissionSet{
                                 CHERI::Permission::Load,
@@ -383,7 +380,38 @@ int qoi_decode(qoi_stream *stream) {
                                 CHERI::Permission::LoadMutable,
                                 CHERI::Permission::LoadStoreCapability,
                                 CHERI::Permission::LoadGlobal},
-                            false, false>(decoder))
+                            true, false>(stream, sizeof(qoi_stream)))
+    return QOI_STATUS_ERR_PARAM;
+
+  Debug::log("P0: {}", stream->in_buf);
+  if (stream->in_buf_size > 0 &&
+      !CHERI::check_pointer<CHERI::PermissionSet{
+                                CHERI::Permission::Global,
+                                CHERI::Permission::Load,
+                                CHERI::Permission::Store,
+                                CHERI::Permission::LoadStoreCapability,
+                                CHERI::Permission::LoadGlobal,
+                                CHERI::Permission::LoadMutable,
+                                },
+                            true, false>(stream->in_buf, stream->in_buf_size))
+    return QOI_STATUS_ERR_PARAM;
+  Debug::log("P1: {}", stream->in_buf);
+
+  if (stream->out_buf_size > 0 &&
+      !CHERI::check_pointer<CHERI::PermissionSet{CHERI::Permission::Store},
+                            true, true>(stream->out_buf, stream->out_buf_size))
+    return QOI_STATUS_ERR_PARAM;
+
+#endif
+
+  qoi_decoder_state *decoder = qoi_unseal(stream->decoder_state);
+  if (!decoder) return QOI_STATUS_ERR_PARAM;
+
+#if __CHERIOT__
+  if (!CHERI::check_pointer<CHERI::PermissionSet{
+                                CHERI::Permission::Load,
+                                CHERI::Permission::Store},
+                            true, true>(decoder, sizeof(qoi_decoder_state)))
     return QOI_STATUS_ERR_PARAM;
 #endif
 
