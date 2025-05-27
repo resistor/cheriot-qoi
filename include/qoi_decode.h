@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __CHERIOT__
@@ -25,8 +26,9 @@ typedef struct {
 } qoi_desc;
 
 // Private internal decoder state.
-typedef struct {
-  uint8_t progress;
+struct qoi_stream;
+struct qoi_decoder_state {
+  int (*next_step)(qoi_decoder_state *, qoi_stream *);
   size_t pixel_length_remaining;
   uint32_t px_prev;
   uint32_t index[64];
@@ -36,7 +38,7 @@ typedef struct {
   } tmp_buf;
   uint8_t tmp_buf_size;
   uint8_t pending_run_count;
-} qoi_decoder_state;
+};
 
 // Can be used to statically define a `qoi_decoder_state` in the
 // calling compartment.
@@ -44,7 +46,7 @@ typedef struct {
   DECLARE_AND_DEFINE_STATIC_SEALED_VALUE(qoi_decoder_state, qoi_decode, \
                                          QOIDecoderStateKey, name, {})
 
-typedef struct {
+struct qoi_stream {
   // Points to the next byte of input to be consumed.
   const unsigned char* in_buf;
   // Number of bytes of input remaining in the buffer.
@@ -60,7 +62,7 @@ typedef struct {
 
   // Private internal decoder state.
   qoi_decoder_state* __sealed_capability decoder_state;
-} qoi_stream;
+};
 
 // Initializes (or resets) a `qoi_decoder_state`.
 __DECL int __cheri_compartment("qoi_decode")
