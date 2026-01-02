@@ -374,6 +374,11 @@ static int qoi_progress_await_tail(qoi_decoder_state *decoder,
 
 int qoi_decode(qoi_stream *stream) {
 #if __CHERIOT__
+  {
+    Timeout t{1};
+    heap_claim_ephemeral(&t, stream);
+  }
+
   if (!CHERI::check_pointer<CHERI::PermissionSet{
           CHERI::Permission::Load, CHERI::Permission::Store,
           CHERI::Permission::LoadMutable,
